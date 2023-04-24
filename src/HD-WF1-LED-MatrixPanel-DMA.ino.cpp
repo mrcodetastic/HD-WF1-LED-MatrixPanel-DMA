@@ -10,19 +10,21 @@
 #include <I2C_BM8563.h>   // https://github.com/tanakamasayuki/I2C_BM8563
 #include <AutoConnect.h>  // https://github.com/Hieromon/AutoConnect
 #include <ESP32-HUB75-MatrixPanel-I2S-DMA.h>
+#include <ElegantOTA.h> // upload firmware by going to http://<ipaddress>/update
+#include <TimeLib2.hpp> // Time mangement 
+#include <esp_err.h>
+#include <esp_log.h>
+#include "debug.h"
+#include "littlefs_core.h"
 
-
-#define Sprintln(a) (Serial.println(a)) 
-#define SprintlnDEC(a, x) (Serial.println(a, x))
-
-
-/*-------------------------- LITTLEFS LIBRARIES ---------------------------*/
-#include "LittleFSCore.h"
+#define fs LittleFS
 
 
 /*----------------------------- RTC and NTP -------------------------------*/
+TimeLib2 datetime; /// for conversion only
 I2C_BM8563 rtc(I2C_BM8563_DEFAULT_ADDRESS, Wire1);
-const char* ntpServer = "time.cloudflare.com";
+const char* ntpServer         = "time.cloudflare.com";
+const char* ntpLastUpdate     = "/ntp_last_update.txt";
 
 
 /*-------------------------- HUB75E DMA Setup -----------------------------*/
@@ -43,19 +45,15 @@ AutoConnectConfig   PortalConfig;
 WiFiClient          client;
 HTTPClient          http; 
 MatrixPanel_I2S_DMA *dma_display = nullptr;
-volatile bool       buttonPressed = false;
 
-TaskHandle_t LedTask1;
+// ROS Task management
+TaskHandle_t Task1;
+TaskHandle_t Task2;
 
 #include "graphics.h"
 #include "timer_handler.h"
 #include "led_pwm_handler.h"
 
-void toggleButtonPressed() {
-  // This function will be called when the interrupt occurs on pin 11
-  buttonPressed = true;
-  // Do something here
-}
 
 
 // This gets called if captive portal is required.
@@ -70,9 +68,25 @@ bool atDetect(IPAddress& softapIP)
   return true;
 }
 
+// Function that gets current epoch time
+unsigned long getEpochTime() {
+  time_t now;
+  struct tm timeinfo;
+  if (!getLocalTime(&timeinfo)) {
+    //Serial.println("Failed to obtain time");
+    return(0);
+  }
+  time(&now);
+  return now;
+}
+
 void setup() {
 
+  delay(2000);
+
   // Init Serial
+  // if ARDUINO_USB_CDC_ON_BOOT is defined then the debug will go out via the serial port and not via ftdi.
+  // ESP_LOG messages seem to go out via ftdi however (even if ARDUINO_USB_CDC_ON_BOOT is defined)
   Serial.begin(115200);
 
   delay(50);
@@ -101,14 +115,8 @@ void setup() {
       Serial.println("LittleFS Mount Failed");
       return;
   }
-  Serial.println( "SPIFFS-like write file to new path and delete it w/folders" );
-  //writeFile2(LittleFS, "/new1/new2/new3/hello3.txt", "Hello3");
-  //listDir(LittleFS, "/", 3);
-  //deleteFile2(LittleFS, "/new1/new2/new3/hello3.txt");
-  //createDir(LittleFS, "/mydir");
-  writeFile(LittleFS, "/last_ntp_update.txt", "123456789");
-  listDir(LittleFS, "/", 1);  
-
+  listDir(LittleFS, "/", 1);    
+ 
   /*-------------------- START THE NETWORKING --------------------*/
   Sprintln(F(" * Starting WiFi Connection Manager"));
 
@@ -132,7 +140,7 @@ void setup() {
   }
   // Connect to an access point
   // WiFi.begin();                 // Connect to the access point of the last connection
-  //WiFi.begin(ssid, password);  // Or, Connect to the specified access point
+  // WiFi.begin(ssid, password);  // Or, Connect to the specified access point
 
   Serial.print("Connecting to Wi-Fi ");
   while (WiFi.status() != WL_CONNECTED) {
@@ -141,16 +149,46 @@ void setup() {
   }
   Serial.println(" CONNECTED");
 
+  Serial.print("IP address: ");
+  Serial.println(WiFi.localIP());  
+
+
   // Init I2C for RTC
   Wire1.begin(BM8563_I2C_SDA, BM8563_I2C_SCL);
   rtc.begin();
 
-  // If we're 2023 or later then we can just use the RTC
+  // Get RTC date and time
   I2C_BM8563_DateTypeDef rtcDate;
+  I2C_BM8563_TimeTypeDef rtcTime;
   rtc.getDate(&rtcDate);
-  
-  if (rtcDate.year >= 2023)
+  rtc.getTime(&rtcTime);
+
+
+  unsigned long ntp_last_update_ts = 0;
+
+  File file = fs.open(ntpLastUpdate, FILE_READ, true);
+  if(!file) {
+      Serial.println("failed to open file for reading");
+  } else  {
+      file.read( (uint8_t*) &ntp_last_update_ts, sizeof(ntp_last_update_ts));          
+      Serial.print("Epoch read from file: ");
+      Serial.println(ntp_last_update_ts);
+      file.close();      
+  }
+
+  //void setTime(int hr, int min, int sec, int day, int month, int yr)
+  // For conversion only
+  datetime.setTime(rtcTime.hours, rtcTime.minutes, rtcTime.seconds, rtcDate.weekDay, rtcDate.month, rtcDate.year);
+
+  bool need_ntp_update = false;    
+  if ( (datetime.getEpochSecond() - ntp_last_update_ts) > (60*60*24*30) )
   {
+    ESP_LOGI("need_ntp_update", "Longer than 30 days since last NTP update. Performing check.");    
+    need_ntp_update = true; // longer than 
+  }
+
+  // If we're 2023 or later then we can just use the RTC
+  if (rtcDate.year >= 2023 && !need_ntp_update)  {
     Serial.println("Have a valid year on the RTC, so not going to make internet call.");
   }
   else 
@@ -178,6 +216,15 @@ void setup() {
         dateStruct.year    = timeInfo.tm_year + 1900;
         rtc.setDate(&dateStruct);
     }
+      ntp_last_update_ts = getEpochTime();
+      File file = fs.open(ntpLastUpdate, FILE_WRITE);
+      if(!file) {
+          Serial.println("- failed to open file for writing");
+      } else  {
+          file.write( (uint8_t*) &ntp_last_update_ts, sizeof(ntp_last_update_ts));          
+          file.close();      
+      }
+      Serial.print("Wrote epoc time of: "); Serial.println(ntp_last_update_ts, DEC);      
 
   }
 
@@ -244,14 +291,35 @@ void setup() {
   dma_display->fillCircle(40, 21, 10, dma_display->color444(15, 0, 15));
   delay(500);  
 
+
+    webServer.on("/", []() {
+      webServer.send(200, "text/plain", "Hi! I am here.");
+    });
+
+    ElegantOTA.begin(&webServer);    // Start ElegantOTA
+    webServer.begin();
+    Serial.println("OTA HTTP server started");
+
+    dma_display->print("test");
+    Serial.print("IP address: ");
+    Serial.println(WiFi.localIP());  
+
+    dma_display->print(WiFi.localIP());
+
 }
 
 void loop() 
 {
 
-  Serial.println("Loop..");
+//  Serial.println("Loop..");
+
+   
+
+        webServer.handleClient();
+        delay(10);
 
 
+/*
   I2C_BM8563_DateTypeDef dateStruct;
   I2C_BM8563_TimeTypeDef timeStruct;
 
@@ -271,4 +339,6 @@ void loop()
 
   // Wait
   delay(1000);
+
+  */
 }
