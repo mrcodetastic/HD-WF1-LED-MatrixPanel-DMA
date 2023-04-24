@@ -58,8 +58,8 @@ ESP32Timer ITimer1(1);
 
 volatile bool ledState      = true;
 
-TaskHandle_t Task1;
-
+//TaskHandle_t Task1;
+volatile bool buttonPressed = false;
 
 // Toggle if pressed
 bool IRAM_ATTR timerCheckToggleButton(void * timerNo)
@@ -75,4 +75,13 @@ bool IRAM_ATTR timerCheckToggleButton(void * timerNo)
         buttonPressed = false; 
     }
     return true;
+}
+
+
+
+IRAM_ATTR void toggleButtonPressed() {
+  // This function will be called when the interrupt occurs on pin PUSH_BUTTON_PIN
+  buttonPressed = true;
+  ESP_LOGI("toggleButtonPressed", "Interrupt Triggered.");
+  // Do something here
 }

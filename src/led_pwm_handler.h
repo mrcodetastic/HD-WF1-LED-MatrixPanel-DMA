@@ -15,6 +15,7 @@ const int BREATH_MAX = 255;
 const int BREATH_TIME = 5000; // in milliseconds
 
 
+// For pointless led fading in and out to tell me it's alive.
 void ledFadeTask(void * parameter) {
 
     while(true)

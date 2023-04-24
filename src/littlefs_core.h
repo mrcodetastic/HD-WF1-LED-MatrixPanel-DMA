@@ -80,6 +80,29 @@ void readFile(fs::FS &fs, const char * path){
     file.close();
 }
 
+std::string readFile2String(fs::FS &fs, const char * path){
+    Serial.printf("Reading file: %s\r\n", path);
+
+    File file = fs.open(path);
+    if(!file || file.isDirectory()){
+        Serial.println("- failed to open file for reading");
+        return std::string("0");
+    }
+
+    std::string mystring;
+    mystring.reserve(64);
+
+    Serial.println("- read from file:");
+    while(file.available())
+    {
+        //Serial.write(file.read());
+        mystring.append(1, file.read());
+    }
+    file.close();
+    return mystring;
+}
+
+
 void writeFile(fs::FS &fs, const char * path, const char * message){
     Serial.printf("Writing file: %s\r\n", path);
 
