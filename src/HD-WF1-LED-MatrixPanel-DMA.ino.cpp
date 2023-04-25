@@ -11,17 +11,17 @@
 #include <AutoConnect.h>  // https://github.com/Hieromon/AutoConnect
 #include <ESP32-HUB75-MatrixPanel-I2S-DMA.h>
 #include <ElegantOTA.h> // upload firmware by going to http://<ipaddress>/update
-#include <TimeLib2.hpp> // Time mangement 
 #include <esp_err.h>
 #include <esp_log.h>
 #include "debug.h"
 #include "littlefs_core.h"
+#include <ESP32Time.h>
+#include <ctime>
 
 #define fs LittleFS
 
 
 /*----------------------------- RTC and NTP -------------------------------*/
-TimeLib2 datetime; /// for conversion only
 I2C_BM8563 rtc(I2C_BM8563_DEFAULT_ADDRESS, Wire1);
 const char* ntpServer         = "time.cloudflare.com";
 const char* ntpLastUpdate     = "/ntp_last_update.txt";
@@ -44,6 +44,7 @@ AutoConnect         Portal(webServer);
 AutoConnectConfig   PortalConfig;
 WiFiClient          client;
 HTTPClient          http; 
+ESP32Time           esp32rtc;  // offset in seconds GMT+1
 MatrixPanel_I2S_DMA *dma_display = nullptr;
 
 // ROS Task management
@@ -162,10 +163,8 @@ void setup() {
   I2C_BM8563_TimeTypeDef rtcTime;
   rtc.getDate(&rtcDate);
   rtc.getTime(&rtcTime);
-
-
-  unsigned long ntp_last_update_ts = 0;
-
+  
+  time_t ntp_last_update_ts = 0;
   File file = fs.open(ntpLastUpdate, FILE_READ, true);
   if(!file) {
       Serial.println("failed to open file for reading");
@@ -176,24 +175,15 @@ void setup() {
       file.close();      
   }
 
-  //void setTime(int hr, int min, int sec, int day, int month, int yr)
-  // For conversion only
-  datetime.setTime(rtcTime.hours, rtcTime.minutes, rtcTime.seconds, rtcDate.weekDay, rtcDate.month, rtcDate.year);
+  // Current RTC
+  std::tm curr_rtc_tm = make_tm(rtcDate.year, rtcDate.month, rtcDate.date);    // April 2nd, 2012
+  time_t  curr_rtc_ts = std::mktime(&curr_rtc_tm);
 
-  bool need_ntp_update = false;    
-  if ( (datetime.getEpochSecond() - ntp_last_update_ts) > (60*60*24*30) )
+  if ( std::abs( (long int) (curr_rtc_ts - ntp_last_update_ts)) > (60*60*24*30) )
   {
-    ESP_LOGI("need_ntp_update", "Longer than 30 days since last NTP update. Performing check.");    
-    need_ntp_update = true; // longer than 
-  }
-
-  // If we're 2023 or later then we can just use the RTC
-  if (rtcDate.year >= 2023 && !need_ntp_update)  {
-    Serial.println("Have a valid year on the RTC, so not going to make internet call.");
-  }
-  else 
-  {
-       Serial.println("Updating RTC from Internet NTP.");  
+      ESP_LOGI("need_ntp_update", "Longer than 30 days since last NTP update. Performing check.");    
+  
+      Serial.println("Updating RTC from Internet NTP.");  
 
       // Set ntp time to local
       configTime(CLOCK_GMT_OFFSET * 3600, 0, ntpServer);
@@ -216,6 +206,7 @@ void setup() {
         dateStruct.year    = timeInfo.tm_year + 1900;
         rtc.setDate(&dateStruct);
     }
+
       ntp_last_update_ts = getEpochTime();
       File file = fs.open(ntpLastUpdate, FILE_WRITE);
       if(!file) {
@@ -223,9 +214,14 @@ void setup() {
       } else  {
           file.write( (uint8_t*) &ntp_last_update_ts, sizeof(ntp_last_update_ts));          
           file.close();      
+          Serial.print("Wrote epoc time of: "); Serial.println(ntp_last_update_ts, DEC);            
       }
-      Serial.print("Wrote epoc time of: "); Serial.println(ntp_last_update_ts, DEC);      
 
+  } else {
+
+    esp32rtc.setTime(rtcTime.seconds, rtcTime.minutes, rtcTime.hours, rtcDate.date, rtcDate.month, rtcDate.year);  // 17th Jan 2021 15:24:30
+    Serial.println("Have a valid year on the external RTC. Updating ESP32 RTC to:");    
+    Serial.println(esp32rtc.getTime("%A, %B %d %Y %H:%M:%S"));   // (String) returns time with specified format 
   }
 
 
@@ -304,19 +300,47 @@ void setup() {
     Serial.print("IP address: ");
     Serial.println(WiFi.localIP());  
 
+    delay(1000);
+    
+    dma_display->clearScreen();
+    dma_display->setCursor(0,0);
+
     dma_display->print(WiFi.localIP());
+
+    delay(3000);
 
 }
 
+unsigned long last_update = 0;
+char buffer[64];
 void loop() 
 {
+    webServer.handleClient();
+    delay(1);
 
-//  Serial.println("Loop..");
+    if ( (millis() - last_update) > 1000 ) {
 
-   
+      struct tm timeinfo;
+      if (getLocalTime(&timeinfo)) {
 
-        webServer.handleClient();
-        delay(10);
+        //Serial.println("Failed to obtain time");
+        dma_display->clearScreen();
+
+        dma_display->setCursor(8,10);
+
+        memset(buffer, 0, 64);
+        snprintf(buffer, 64, "%02d:%02d:%02d",timeinfo.tm_hour,timeinfo.tm_min, timeinfo.tm_sec);
+        dma_display->print(buffer);
+
+        Serial.println("Performing screen time update...");
+
+      } else {
+        Serial.println("Failed to get local time.");
+      }
+
+      last_update = millis();
+
+    }
 
 
 /*
@@ -341,4 +365,5 @@ void loop()
   delay(1000);
 
   */
-}
+
+} // loop() 

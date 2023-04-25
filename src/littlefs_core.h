@@ -3,6 +3,19 @@
 #include <Arduino.h>
 #include <FS.h>
 #include <LittleFS.h>
+#include <ctime>
+
+
+// Make a tm structure representing this date
+// https://stackoverflow.com/questions/9987562/determining-the-difference-between-dates
+std::tm make_tm(int year, int month, int day)
+{
+    std::tm tm = {0};
+    tm.tm_year = year - 1900; // years count from 1900
+    tm.tm_mon = month - 1;    // months count from January=0
+    tm.tm_mday = day;         // days count from 1
+    return tm;
+}
 
 /* You only need to format LittleFS the first time you run a
    test or else use the LITTLEFS plugin to create a partition
