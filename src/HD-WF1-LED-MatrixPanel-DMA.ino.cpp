@@ -55,6 +55,27 @@ TaskHandle_t Task2;
 #include "timer_handler.h"
 #include "led_pwm_handler.h"
 
+RTC_DATA_ATTR int bootCount = 0;
+
+/*
+Method to print the reason by which ESP32
+has been awaken from sleep
+*/
+void print_wakeup_reason(){
+  esp_sleep_wakeup_cause_t wakeup_reason;
+
+  wakeup_reason = esp_sleep_get_wakeup_cause();
+
+  switch(wakeup_reason)
+  {
+    case ESP_SLEEP_WAKEUP_EXT0 : Serial.println("Wakeup caused by external signal using RTC_IO"); break;
+    case ESP_SLEEP_WAKEUP_EXT1 : Serial.println("Wakeup caused by external signal using RTC_CNTL"); break;
+    case ESP_SLEEP_WAKEUP_TIMER : Serial.println("Wakeup caused by timer"); break;
+    case ESP_SLEEP_WAKEUP_TOUCHPAD : Serial.println("Wakeup caused by touchpad"); break;
+    case ESP_SLEEP_WAKEUP_ULP : Serial.println("Wakeup caused by ULP program"); break;
+    default : Serial.printf("Wakeup was not caused by deep sleep: %d\n",wakeup_reason); break;
+  }
+}
 
 
 // This gets called if captive portal is required.
@@ -92,6 +113,21 @@ void setup() {
 
   delay(50);
 
+
+  //Increment boot number and print it every reboot
+  ++bootCount;
+  Serial.println("Boot number: " + String(bootCount));
+
+  //Print the wakeup reason for ESP32
+  print_wakeup_reason();
+
+  /*
+    We set our ESP32 to wake up for an external trigger.
+    There are two types for ESP32, ext0 and ext1 .
+  */
+  esp_sleep_enable_ext0_wakeup((gpio_num_t)PUSH_BUTTON_PIN, 0); //1 = High, 0 = Low  
+
+
   // Interrupt on toggle button press
   pinMode(PUSH_BUTTON_PIN, INPUT_PULLUP); // Set pin 11 as input with internal pull-up resistor
   attachInterrupt(digitalPinToInterrupt(PUSH_BUTTON_PIN), toggleButtonPressed, RISING); // Set up the interrupt on rising edge of pin 11
@@ -110,6 +146,41 @@ void setup() {
     &Task1,                   /* Task handle to keep track of created task */
     0);                       /* Core */   
   
+
+  /*-------------------- START THE HUB75E DISPLAY --------------------*/
+    
+    // Module configuration
+    HUB75_I2S_CFG mxconfig(
+      PANEL_RES_X,   // module width
+      PANEL_RES_Y,   // module height
+      PANEL_CHAIN,   // Chain length
+      _pins_x1       // pin mapping for port X1
+    );
+    mxconfig.i2sspeed = HUB75_I2S_CFG::HZ_20M;  
+    mxconfig.latch_blanking = 3;
+    //mxconfig.clkphase = false;
+    //mxconfig.driver = HUB75_I2S_CFG::FM6126A;
+    //mxconfig.double_buff = false;  
+    mxconfig.min_refresh_rate = 30;
+
+
+    // Display Setup
+    dma_display = new MatrixPanel_I2S_DMA(mxconfig);
+    dma_display->begin();
+    dma_display->setBrightness8(128); //0-255
+    dma_display->clearScreen();
+    //dma_display->fillScreen(myWHITE);
+
+
+  esp_sleep_wakeup_cause_t wakeup_reason = esp_sleep_get_wakeup_cause();    
+
+  if ( wakeup_reason == ESP_SLEEP_WAKEUP_EXT0)
+  {
+    dma_display->setCursor(0,0);
+    dma_display->print("Wakie wakie!");
+    delay(1000);
+  }
+
 
   /*-------------------- INIT LITTLE FS --------------------*/
   if(!LittleFS.begin(FORMAT_LITTLEFS_IF_FAILED)){
@@ -179,7 +250,7 @@ void setup() {
   std::tm curr_rtc_tm = make_tm(rtcDate.year, rtcDate.month, rtcDate.date);    // April 2nd, 2012
   time_t  curr_rtc_ts = std::mktime(&curr_rtc_tm);
 
-  if ( std::abs( (long int) (curr_rtc_ts - ntp_last_update_ts)) > (60*60*24*30) )
+  if ( std::abs( (long int) (curr_rtc_ts - ntp_last_update_ts)) > (60*60*24*30) && (bootCount == 0))
   {
       ESP_LOGI("need_ntp_update", "Longer than 30 days since last NTP update. Performing check.");    
   
@@ -237,29 +308,7 @@ void setup() {
   }
 
 
-  /*-------------------- START THE HUB75E DISPLAY --------------------*/
-  
-  // Module configuration
-  HUB75_I2S_CFG mxconfig(
-    PANEL_RES_X,   // module width
-    PANEL_RES_Y,   // module height
-    PANEL_CHAIN,   // Chain length
-    _pins_x1       // pin mapping for port X1
-  );
-  mxconfig.i2sspeed = HUB75_I2S_CFG::HZ_20M;  
-  mxconfig.latch_blanking = 3;
-  //mxconfig.clkphase = false;
-  //mxconfig.driver = HUB75_I2S_CFG::FM6126A;
-  //mxconfig.double_buff = false;  
-  mxconfig.min_refresh_rate = 30;
-
-
-  // Display Setup
-  dma_display = new MatrixPanel_I2S_DMA(mxconfig);
-  dma_display->begin();
-  dma_display->setBrightness8(128); //0-255
-  dma_display->clearScreen();
-  //dma_display->fillScreen(myWHITE);
+ 
   
   // fix the screen with green
   dma_display->fillRect(0, 0, dma_display->width(), dma_display->height(), dma_display->color444(0, 15, 0));

@@ -83,5 +83,9 @@ IRAM_ATTR void toggleButtonPressed() {
   // This function will be called when the interrupt occurs on pin PUSH_BUTTON_PIN
   buttonPressed = true;
   ESP_LOGI("toggleButtonPressed", "Interrupt Triggered.");
+
+ // delay(1000);
+
+   esp_deep_sleep_start();      // Sleep for e.g. 30 minutes
   // Do something here
 }
