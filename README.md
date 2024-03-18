@@ -10,7 +10,7 @@
  
  ## How to flash?
  
-To put the board into Download mode, simply bridge the 2 pads near the MicroUSB port, then connect the board into your PC using a USB-A to USB-A cable, connecting to th e** USB A port** on the device (not the Micro USB input). It is NOT possible to program the board using the onboard Micro USB port. Thanks [Rappbledor](https://github.com/mrfaptastic/HD-WF1-LED-MatrixPanel-DMA/issues/3)
+To put the board into Download mode, simply bridge the 2 pads near the MicroUSB port, then connect the board into your PC using a USB-A to USB-A cable, connecting to the **USB-A port** on the device (not the Micro USB input). It is NOT possible to program the board using the onboard Micro USB port. Thanks [Rappbledor](https://github.com/mrfaptastic/HD-WF1-LED-MatrixPanel-DMA/issues/3)
 
 ![image](https://github.com/mrfaptastic/HD-WF1-LED-MatrixPanel-DMA/assets/12006953/adddb545-856e-4d61-b4ab-a88a39814969)
 
