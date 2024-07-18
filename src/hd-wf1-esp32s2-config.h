@@ -1,6 +1,6 @@
 // -------------------------------------------
-const char *wifi_ssid = "ThreeUK_LTE_4D30";
-const char *wifi_pass = "CHUDANT8TQKK9L74";
+const char *wifi_ssid = "xxxx";
+const char *wifi_pass = "yyyy";
 
 // -------------------------------------------
 #define CLOCK_GMT_OFFSET 1
