@@ -1,11 +1,17 @@
 // -------------------------------------------
+// Wifi Configuration
+
 const char *wifi_ssid = "xxxx";
 const char *wifi_pass = "yyyy";
 
 // -------------------------------------------
+// Clock Offset
+
 #define CLOCK_GMT_OFFSET 1
 
 // -------------------------------------------
+// WF1 GPIO Configuration
+
 #define RUN_LED_PIN       40
 #define PUSH_BUTTON_PIN   11
 
