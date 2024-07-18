@@ -1,22 +1,27 @@
 // Pin Definitions for the Huidu HUB75 Series Control Card:  HD-WF1
 // https://www.aliexpress.com/item/1005005038544582.html can be got for about $5 USD
 #include "hd-wf1-esp32s2-config.h"
-
-#include <Arduino.h>
-#include <WiFi.h>
-#include <WebServer.h>
-#include <ESPmDNS.h>
-#include <SPIFFS.h>
-#include <I2C_BM8563.h>   // https://github.com/tanakamasayuki/I2C_BM8563
-#include <AutoConnect.h>  // https://github.com/Hieromon/AutoConnect
-#include <ESP32-HUB75-MatrixPanel-I2S-DMA.h>
-#include <ElegantOTA.h> // upload firmware by going to http://<ipaddress>/update
 #include <esp_err.h>
 #include <esp_log.h>
 #include "debug.h"
 #include "littlefs_core.h"
-#include <ESP32Time.h>
 #include <ctime>
+#include "driver/ledc.h"
+
+#include <Arduino.h>
+#include <WiFi.h>
+#include <WiFiMulti.h>
+#include <HTTPClient.h>
+
+#include <WebServer.h>
+#include <ESPmDNS.h>
+#include <I2C_BM8563.h>   // https://github.com/tanakamasayuki/I2C_BM8563
+
+#include <ESP32-HUB75-MatrixPanel-I2S-DMA.h>
+#include <ElegantOTA.h> // upload firmware by going to http://<ipaddress>/update
+
+#include <ESP32Time.h>
+#include <Bounce2.h>
 
 #define fs LittleFS
 
@@ -40,22 +45,33 @@ HUB75_I2S_CFG::i2s_pins _pins_x1 = {WF1_R1_PIN, WF1_G1_PIN, WF1_B1_PIN, WF1_R2_P
 // handlers of the ESP32 WebServer class, so it explicitly instantiates the
 // ESP32 WebServer.
 WebServer           webServer;
-AutoConnect         Portal(webServer);
-AutoConnectConfig   PortalConfig;
-WiFiClient          client;
-HTTPClient          http; 
+WiFiMulti           wifiMulti;
 ESP32Time           esp32rtc;  // offset in seconds GMT+1
 MatrixPanel_I2S_DMA *dma_display = nullptr;
+
+// INSTANTIATE A Button OBJECT FROM THE Bounce2 NAMESPACE
+Bounce2::Button button = Bounce2::Button();
 
 // ROS Task management
 TaskHandle_t Task1;
 TaskHandle_t Task2;
 
-#include "graphics.h"
-#include "timer_handler.h"
 #include "led_pwm_handler.h"
 
 RTC_DATA_ATTR int bootCount = 0;
+
+volatile bool buttonPressed = false;
+
+IRAM_ATTR void toggleButtonPressed() {
+  // This function will be called when the interrupt occurs on pin PUSH_BUTTON_PIN
+  buttonPressed = true;
+  ESP_LOGI("toggleButtonPressed", "Interrupt Triggered.");
+
+   esp_deep_sleep_start();      // Sleep for e.g. 30 minutes
+  // Do something here
+}
+
+
 
 /*
 Method to print the reason by which ESP32
@@ -78,18 +94,6 @@ void print_wakeup_reason(){
 }
 
 
-// This gets called if captive portal is required.
-bool atDetect(IPAddress& softapIP) 
-{
-
-  Sprintln(F(" * No WiFi configuration found. Starting Portal."));
-
-  // AP will be availabe on your mobile phone, use the password 12345678 to connect
-  Sprintln(F("Captive Portal started."));
-  
-  return true;
-}
-
 // Function that gets current epoch time
 unsigned long getEpochTime() {
   time_t now;
@@ -102,50 +106,28 @@ unsigned long getEpochTime() {
   return now;
 }
 
+//
+// Arduino Setup Task
+//
 void setup() {
 
-  delay(2000);
-
   // Init Serial
-  // if ARDUINO_USB_CDC_ON_BOOT is defined then the debug will go out via the serial port and not via ftdi.
-  // ESP_LOG messages seem to go out via ftdi however (even if ARDUINO_USB_CDC_ON_BOOT is defined)
+  // if ARDUINO_USB_CDC_ON_BOOT is defined then the debug will go out via the USB port
   Serial.begin(115200);
 
-  delay(50);
+  delay(200);
 
+  /*-------------------- START THE NETWORKING --------------------*/
+  WiFi.mode(WIFI_STA);
+  wifiMulti.addAP(wifi_ssid, wifi_pass); // configure in the *-config.h file
 
-  //Increment boot number and print it every reboot
-  ++bootCount;
-  Serial.println("Boot number: " + String(bootCount));
+  // wait for WiFi connection
+  Serial.print("Waiting for WiFi to connect...");
+  while (wifiMulti.run() != WL_CONNECTED) {
+    Serial.print(".");
+  }
+  Serial.println(" connected");
 
-  //Print the wakeup reason for ESP32
-  print_wakeup_reason();
-
-  /*
-    We set our ESP32 to wake up for an external trigger.
-    There are two types for ESP32, ext0 and ext1 .
-  */
-  esp_sleep_enable_ext0_wakeup((gpio_num_t)PUSH_BUTTON_PIN, 0); //1 = High, 0 = Low  
-
-
-  // Interrupt on toggle button press
-  pinMode(PUSH_BUTTON_PIN, INPUT_PULLUP); // Set pin 11 as input with internal pull-up resistor
-  attachInterrupt(digitalPinToInterrupt(PUSH_BUTTON_PIN), toggleButtonPressed, RISING); // Set up the interrupt on rising edge of pin 11
-
-  // Setup LEDC PWM Controler
-  ledcSetup(LED_CHANNEL, LED_FREQ, LED_RESOLUTION);
-  ledcAttachPin(RUN_LED_PIN, LED_CHANNEL);  
-
-  // Start fading that LED
-  xTaskCreatePinnedToCore(
-    ledFadeTask,            /* Task function. */
-    "ledFadeTask",                 /* name of task. */
-    1000,                    /* Stack size of task */
-    NULL,                     /* parameter of the task */
-    1,                        /* priority of the task */
-    &Task1,                   /* Task handle to keep track of created task */
-    0);                       /* Core */   
-  
 
   /*-------------------- START THE HUB75E DISPLAY --------------------*/
     
@@ -157,30 +139,89 @@ void setup() {
       _pins_x1       // pin mapping for port X1
     );
     mxconfig.i2sspeed = HUB75_I2S_CFG::HZ_20M;  
-    mxconfig.latch_blanking = 3;
+    mxconfig.latch_blanking = 4;
     //mxconfig.clkphase = false;
     //mxconfig.driver = HUB75_I2S_CFG::FM6126A;
     //mxconfig.double_buff = false;  
-    mxconfig.min_refresh_rate = 30;
+    //mxconfig.min_refresh_rate = 30;
 
 
     // Display Setup
     dma_display = new MatrixPanel_I2S_DMA(mxconfig);
     dma_display->begin();
     dma_display->setBrightness8(128); //0-255
-    dma_display->clearScreen();
-    //dma_display->fillScreen(myWHITE);
+    dma_display->clearScreen();  
 
+  /*-------------------- --------------- --------------------*/
+  //Increment boot number and print it every reboot
+  ++bootCount;
+  Serial.println("Boot number: " + String(bootCount));
+
+  //Print the wakeup reason for ESP32
+  print_wakeup_reason();
 
   esp_sleep_wakeup_cause_t wakeup_reason = esp_sleep_get_wakeup_cause();    
 
   if ( wakeup_reason == ESP_SLEEP_WAKEUP_EXT0)
   {
-    dma_display->setCursor(0,0);
-    dma_display->print("Wakie wakie!");
+    dma_display->setCursor(3,6);
+    dma_display->print("Wake up!");
     delay(1000);
   }
+  else
+  {
+    dma_display->print("Starting.");
 
+  }
+
+
+  /*
+    We set our ESP32 to wake up for an external trigger.
+    There are two types for ESP32, ext0 and ext1 .
+  */
+  esp_sleep_enable_ext0_wakeup((gpio_num_t)PUSH_BUTTON_PIN, 0); //1 = High, 0 = Low  
+
+  /*-------------------- --------------- --------------------*/
+  // BUTTON SETUP 
+  button.attach( PUSH_BUTTON_PIN, INPUT ); // USE EXTERNAL PULL-UP
+  button.interval(5);   // DEBOUNCE INTERVAL IN MILLISECONDS
+  button.setPressedState(LOW); // INDICATE THAT THE LOW STATE CORRESPONDS TO PHYSICALLY PRESSING THE BUTTON
+
+
+  /*-------------------- LEDC Controller --------------------*/
+    // Prepare and then apply the LEDC PWM timer configuration
+    ledc_timer_config_t ledc_timer = {
+        .speed_mode       = LEDC_LOW_SPEED_MODE,
+        .duty_resolution  = LEDC_TIMER_13_BIT ,
+        .timer_num        = LEDC_TIMER_0,
+        .freq_hz          = 4000,  // Set output frequency at 4 kHz
+        .clk_cfg          = LEDC_AUTO_CLK
+    };
+    ESP_ERROR_CHECK(ledc_timer_config(&ledc_timer));
+
+    // Prepare and then apply the LEDC PWM channel configuration
+    ledc_channel_config_t ledc_channel = {
+        .gpio_num       = RUN_LED_PIN,
+        .speed_mode     = LEDC_LOW_SPEED_MODE,
+        .channel        = LEDC_CHANNEL_0,
+        .intr_type      = LEDC_INTR_DISABLE,
+        .timer_sel      = LEDC_TIMER_0,
+        .duty           = 0, // Set duty to 0%
+        .hpoint         = 0
+    };
+    ESP_ERROR_CHECK(ledc_channel_config(&ledc_channel));  
+
+
+    // Start fading that LED
+    xTaskCreatePinnedToCore(
+      ledFadeTask,            /* Task function. */
+      "ledFadeTask",                 /* name of task. */
+      1000,                    /* Stack size of task */
+      NULL,                     /* parameter of the task */
+      1,                        /* priority of the task */
+      &Task1,                   /* Task handle to keep track of created task */
+      0);                       /* Core */   
+    
 
   /*-------------------- INIT LITTLE FS --------------------*/
   if(!LittleFS.begin(FORMAT_LITTLEFS_IF_FAILED)){
@@ -189,42 +230,7 @@ void setup() {
   }
   listDir(LittleFS, "/", 1);    
  
-  /*-------------------- START THE NETWORKING --------------------*/
-  Sprintln(F(" * Starting WiFi Connection Manager"));
-
-  PortalConfig.apid = "MatixPanel";
-  PortalConfig.title = "Configure WiFi";
-  PortalConfig.menuItems = AC_MENUITEM_CONFIGNEW;
-
-  Portal.config(PortalConfig);
-
-  // Starts user web site included the AutoConnect portal.
-  Portal.onDetect(atDetect);
-  if (Portal.begin()) {
-    //Serial.println("Started, IP:" + WiFi.localIP().toString());
-  } else {
-    Sprintln(F("Something went wrong?"));
-    while (true) { 
-      #if defined(ESP8266)          
-              yield(); // keep the watchdog fed. Removed: NOT relevant to ESP32
-      #endif         
-      } // Wait.
-  }
-  // Connect to an access point
-  // WiFi.begin();                 // Connect to the access point of the last connection
-  // WiFi.begin(ssid, password);  // Or, Connect to the specified access point
-
-  Serial.print("Connecting to Wi-Fi ");
-  while (WiFi.status() != WL_CONNECTED) {
-    delay(500);
-    Serial.print(".");
-  }
-  Serial.println(" CONNECTED");
-
-  Serial.print("IP address: ");
-  Serial.println(WiFi.localIP());  
-
-
+  /*-------------------- --------------- --------------------*/
   // Init I2C for RTC
   Wire1.begin(BM8563_I2C_SDA, BM8563_I2C_SCL);
   rtc.begin();
@@ -295,47 +301,7 @@ void setup() {
     Serial.println(esp32rtc.getTime("%A, %B %d %Y %H:%M:%S"));   // (String) returns time with specified format 
   }
 
-
-	// Setup timer to call  checkToggleButtonTask every second
-	if (ITimer1.attachInterruptInterval(TIMER1_INTERVAL_MS * 1000, timerCheckToggleButton))
-	{
-		Serial.print(F("Starting  timerCheckToggleButton OK, millis() = "));
-		Serial.println(millis());
-	}
-	else
-  {
-  Serial.println(F("Can't set timerCheckToggleButton. Select another freq. or timer"));
-  }
-
-
- 
-  
-  // fix the screen with green
-  dma_display->fillRect(0, 0, dma_display->width(), dma_display->height(), dma_display->color444(0, 15, 0));
-  delay(500);
-
-
-  // fix the screen with green
-  dma_display->fillRect(0, 0, dma_display->width(), dma_display->height(), dma_display->color444(0, 15, 0));
-  delay(500);
-
-  // draw a box in yellow
-  dma_display->drawRect(0, 0, dma_display->width(), dma_display->height(), dma_display->color444(15, 15, 0));
-  delay(500);
-
-  // draw an 'X' in red
-  dma_display->drawLine(0, 0, dma_display->width()-1, dma_display->height()-1, dma_display->color444(15, 0, 0));
-  dma_display->drawLine(dma_display->width()-1, 0, 0, dma_display->height()-1, dma_display->color444(15, 0, 0));
-  delay(500);
-
-  // draw a blue circle
-  dma_display->drawCircle(10, 10, 10, dma_display->color444(0, 0, 15));
-  delay(500);
-
-  // fill a violet circle
-  dma_display->fillCircle(40, 21, 10, dma_display->color444(15, 0, 15));
-  delay(500);  
-
+   /*-------------------- --------------- --------------------*/
 
     webServer.on("/", []() {
       webServer.send(200, "text/plain", "Hi! I am here.");
@@ -345,7 +311,7 @@ void setup() {
     webServer.begin();
     Serial.println("OTA HTTP server started");
 
-    dma_display->print("test");
+    /*-------------------- --------------- --------------------*/
     Serial.print("IP address: ");
     Serial.println(WiFi.localIP());  
 
@@ -355,7 +321,7 @@ void setup() {
     dma_display->setCursor(0,0);
 
     dma_display->print(WiFi.localIP());
-
+    dma_display->clearScreen();
     delay(3000);
 
 }
@@ -364,6 +330,16 @@ unsigned long last_update = 0;
 char buffer[64];
 void loop() 
 {
+
+    // YOU MUST CALL THIS EVERY LOOP
+    button.update();
+
+    if ( button.pressed() ) {
+      
+     toggleButtonPressed();
+
+    }    
+
     webServer.handleClient();
     delay(1);
 
@@ -372,16 +348,15 @@ void loop()
       struct tm timeinfo;
       if (getLocalTime(&timeinfo)) {
 
-        //Serial.println("Failed to obtain time");
-        dma_display->clearScreen();
-
-        dma_display->setCursor(8,10);
-
         memset(buffer, 0, 64);
         snprintf(buffer, 64, "%02d:%02d:%02d",timeinfo.tm_hour,timeinfo.tm_min, timeinfo.tm_sec);
-        dma_display->print(buffer);
 
         Serial.println("Performing screen time update...");
+        dma_display->fillRect(0,9,PANEL_RES_X, 9, 0x00); // wipe the section of the screen just used for the time
+        dma_display->setCursor(8,10);          
+        dma_display->print(buffer);           
+
+
 
       } else {
         Serial.println("Failed to get local time.");
@@ -392,27 +367,46 @@ void loop()
     }
 
 
-/*
-  I2C_BM8563_DateTypeDef dateStruct;
-  I2C_BM8563_TimeTypeDef timeStruct;
+    // Canvas loop
+      float t = (float) ((millis()%4000)/4000.f);
+      float tt = (float) ((millis()%16000)/16000.f);
 
-  // Get RTC
-  rtc.getDate(&dateStruct);
-  rtc.getTime(&timeStruct);
+      for(int x = 0; x < (PANEL_RES_X*PANEL_CHAIN); x++) {
 
-  // Print RTC
-  Serial.printf("%04d/%02d/%02d %02d:%02d:%02d\n",
-                dateStruct.year,
-                dateStruct.month,
-                dateStruct.date,
-                timeStruct.hours,
-                timeStruct.minutes,
-                timeStruct.seconds
-               );
+        // calculate the overal shade
+        float f = (((sin(tt-(float)x/PANEL_RES_Y/32.)*2.f*PI)+1)/2)*255;
+        // calculate hue spectrum into rgb
+        float r = max(min(cosf(2.f*PI*(t+((float)x/PANEL_RES_Y+0.f)/3.f))+0.5f,1.f),0.f);
+        float g = max(min(cosf(2.f*PI*(t+((float)x/PANEL_RES_Y+1.f)/3.f))+0.5f,1.f),0.f);
+        float b = max(min(cosf(2.f*PI*(t+((float)x/PANEL_RES_Y+2.f)/3.f))+0.5f,1.f),0.f);
 
-  // Wait
-  delay(1000);
+        // iterate pixels for every row
+        for(int y = 0; y < PANEL_RES_Y; y++){
 
-  */
+        // Keep this bit clear for the clock
+        if (y > 8 && y < 18) 
+        {      
+          continue; // leave a black bar for the time, don't touch, this part of display is updated by the code in the clock update bit above
+        }
+
+          if(y*2 < PANEL_RES_Y){
+            // top-middle part of screen, transition of value
+            float t = (2.f*y+1)/PANEL_RES_Y;
+            dma_display->drawPixelRGB888(x,y,
+              (r*t)*f,
+              (g*t)*f,
+              (b*t)*f
+            );
+          }else{
+            // middle to bottom of screen, transition of saturation
+            float t = (2.f*(PANEL_RES_Y-y)-1)/PANEL_RES_Y;
+            dma_display->drawPixelRGB888(x,y,
+              (r*t+1-t)*f,
+              (g*t+1-t)*f,
+              (b*t+1-t)*f
+            );
+          }
+        }
+      }    
 
 } // loop() 
