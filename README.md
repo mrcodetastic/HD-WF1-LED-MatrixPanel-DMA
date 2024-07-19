@@ -24,3 +24,8 @@ Alternatively, solder a micro-usb to the exposed pins underneath to gain access 
 
 The above has been successfully tested on board is rev 7.0.1-1 and it comes with an ESP32-S2 with 4MB flash and no PS Ram.
 
+## GitHub Sketch Output
+It should show a clock and some colourful graphics. Designed for a 64x32px LED matrix.
+
+![image](https://github.com/user-attachments/assets/d7293beb-f293-4741-9fbf-6555be1db297)
+
