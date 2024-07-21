@@ -115,20 +115,6 @@ void setup() {
   // if ARDUINO_USB_CDC_ON_BOOT is defined then the debug will go out via the USB port
   Serial.begin(115200);
 
-  delay(200);
-
-  /*-------------------- START THE NETWORKING --------------------*/
-  WiFi.mode(WIFI_STA);
-  wifiMulti.addAP(wifi_ssid, wifi_pass); // configure in the *-config.h file
-
-  // wait for WiFi connection
-  Serial.print("Waiting for WiFi to connect...");
-  while (wifiMulti.run() != WL_CONNECTED) {
-    Serial.print(".");
-  }
-  Serial.println(" connected");
-
-
   /*-------------------- START THE HUB75E DISPLAY --------------------*/
     
     // Module configuration
@@ -150,7 +136,29 @@ void setup() {
     dma_display = new MatrixPanel_I2S_DMA(mxconfig);
     dma_display->begin();
     dma_display->setBrightness8(128); //0-255
-    dma_display->clearScreen();  
+    dma_display->clearScreen();
+
+    dma_display->fillScreenRGB888(255,0,0);
+    delay(1000);
+    dma_display->fillScreenRGB888(0,255,0);
+    delay(1000);    
+    dma_display->fillScreenRGB888(0,0,255);
+    delay(1000);       
+    dma_display->clearScreen();
+    dma_display->print("Connecting");     
+
+
+  /*-------------------- START THE NETWORKING --------------------*/
+  WiFi.mode(WIFI_STA);
+  wifiMulti.addAP(wifi_ssid, wifi_pass); // configure in the *-config.h file
+
+  // wait for WiFi connection
+  Serial.print("Waiting for WiFi to connect...");
+  while (wifiMulti.run() != WL_CONNECTED) {
+    Serial.print(".");
+  }
+  Serial.println(" connected");
+    
 
   /*-------------------- --------------- --------------------*/
   //Increment boot number and print it every reboot
