@@ -29,3 +29,6 @@ It should show a clock and some colourful graphics. Designed for a 64x32px LED m
 
 ![image](https://github.com/user-attachments/assets/d7293beb-f293-4741-9fbf-6555be1db297)
 
+## Huidu WF2
+I don't have a Huidu WF2, but others have noted it's an ESP32-S3 based and works as well with this library: https://github.com/mrcodetastic/ESP32-HUB75-MatrixPanel-DMA/issues/433
+
