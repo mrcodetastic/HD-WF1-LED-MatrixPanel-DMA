@@ -14,7 +14,7 @@ There are probably other sellers on Aliexpress as well. I give no guarantees tha
  
  ## How to flash?
  
-To put the board into Download mode, simply bridge the 2 pads near the MicroUSB port, then connect the board into your PC using a [USB-A to USB-A cable](https://www.aliexpress.com/item/1005006854476947.html), connecting to the **USB-A port** on the device (not the Micro USB input). It is NOT possible to program the board using the onboard Micro USB port. Thanks [Rappbledor](https://github.com/mrfaptastic/HD-WF1-LED-MatrixPanel-DMA/issues/3)
+To put the board into Download mode, simply bridge the 2 pads near the MicroUSB port, then connect the board into your PC using a [USB-A to USB-A cable](https://www.aliexpress.com/item/1005006854476947.html), connecting to the **USB-A port** on the WF1 (not the Micro USB input). It is NOT possible to program the board using the onboard Micro USB port. Thanks [Rappbledor](https://github.com/mrfaptastic/HD-WF1-LED-MatrixPanel-DMA/issues/3)
 
 
 ![image](https://github.com/mrfaptastic/HD-WF1-LED-MatrixPanel-DMA/assets/12006953/adddb545-856e-4d61-b4ab-a88a39814969)
