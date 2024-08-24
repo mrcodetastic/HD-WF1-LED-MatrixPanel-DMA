@@ -1,9 +1,13 @@
 # HD-WF1-LED-MatrixPanel-DMA
- Custom firmware based on my [HUB75 DMA library](https://github.com/mrfaptastic/ESP32-HUB75-MatrixPanel-DMA),  for the Huidu WF1 LED Controller Card based on the ESP32-S2.
+Custom firmware based on my [HUB75 DMA library](https://github.com/mrfaptastic/ESP32-HUB75-MatrixPanel-DMA),  for the Huidu WF1 LED Controller Card based on the ESP32-S2.
 
- These can be bought for about USD $5 and are quite good as they come with a battery and a Real Time Clock (BM8563), and a push button connected to GPIO 11 for your use.
+These can be bought for about USD $5 and are quite good as they come with a battery and a Real Time Clock (BM8563), and a push button connected to GPIO 11 for your use.
  
-[ https://www.aliexpress.com/item/1005005038544582.html ](https://www.aliexpress.com/item/1005006075952980.html)
+Seller #1: [ https://www.aliexpress.com/item/1005005038544582.html ](https://www.aliexpress.com/item/1005006075952980.html)
+
+Seller #2: (https://www.aliexpress.com/item/1005005556957598.html) 
+
+There are probably other sellers on Aliexpress as well. I give no guarantees that these will use the ESP32-S2, check the model version!
 
 ![image](https://github.com/mrfaptastic/HD-WF1-LED-MatrixPanel-DMA/assets/12006953/ccdff75b-b764-424a-b923-dbac86f1b151)
 
