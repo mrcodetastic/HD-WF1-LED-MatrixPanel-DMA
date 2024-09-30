@@ -16,16 +16,12 @@ There are probably other sellers on Aliexpress as well. I give no guarantees tha
  
 To put the board into Download mode, simply bridge the 2 pads near the MicroUSB port, then connect the board into your PC using a [USB-A to USB-A cable](https://www.aliexpress.com/item/1005006854476947.html), connecting to the **USB-A port** on the WF1 (not the Micro USB input). It is NOT possible to program the board using the onboard Micro USB port. Thanks [Rappbledor](https://github.com/mrfaptastic/HD-WF1-LED-MatrixPanel-DMA/issues/3)
 
-
-![image](https://github.com/mrfaptastic/HD-WF1-LED-MatrixPanel-DMA/assets/12006953/adddb545-856e-4d61-b4ab-a88a39814969)
+![image](https://github.com/user-attachments/assets/821aea15-4616-4b60-a251-4f1255f092e0)
 
 
 Alternatively, solder a micro-usb to the exposed pins underneath to gain access to the D+ and D- lines connected to the USB-A port on the device. The ESP32-S2 routes the USB D+ and D- signals to GPIOs 20 and 19 respectively. 
 
 ![image](https://github.com/mrfaptastic/HD-WF1-LED-MatrixPanel-DMA/assets/12006953/fba33a4d-9737-4366-9a3b-776bec22ab2f)
-
-![image](https://github.com/mrfaptastic/HD-WF1-LED-MatrixPanel-DMA/assets/12006953/9b8b4b9a-89b9-4707-8c9a-8e2cb30d4852)
-
 
 The above has been successfully tested on board is rev 7.0.1-1 and it comes with an ESP32-S2 with 4MB flash and no PS Ram.
 
